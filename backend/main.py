@@ -48,7 +48,7 @@ def init_db():
             age INTEGER NOT NULL,
             medications TEXT NOT NULL,
             next_appointment TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         '''
     )
