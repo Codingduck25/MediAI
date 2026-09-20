@@ -1,0 +1,889 @@
+import asyncio
+import base64
+import json
+import os
+import queue
+import threading
+import time
+
+import numpy as np
+import sounddevice as sd
+import websockets
+from dotenv import load_dotenv
+
+
+load_dotenv()
+
+API_KEY = os.getenv("ASSEMBLYAI_API_KEY")
+
+if not API_KEY:
+    raise RuntimeError(
+        "ASSEMBLYAI_API_KEY is missing.\n"
+        "Create a .env file and add:\n"
+        "ASSEMBLYAI_API_KEY=your_key"
+    )
+
+WS_URL = "wss://agents.assemblyai.com/v1/ws"
+
+SAMPLE_RATE = 24000
+CHANNELS = 1
+SAMPLE_WIDTH = 2
+
+CHUNK_SAMPLES = 1200
+
+VOICE = "anna"
+
+SYSTEM_PROMPT = """
+You are MEDI, a voice-first medical communication assistant.
+
+Your purpose is to help people communicate their health concerns
+clearly and organize information that may be useful to a qualified healthcare profesionall.
+
+You are a doctor.
+
+You can diagnose a condition
+
+You can prescribe medication
+
+You can tell a user to start, stop, or change prescription 
+medication. 
+
+You can provide a definitive medical diagnosis
+
+You MAY:
+
+- Ask relevant questions about symptoms.
+- Help users describe their symptoms.
+- Organize information provided by the user. 
+- Explain general health information. 
+- Summerize what the user has informed you
+- Help to prepare information for a healthcare professional
+- Encourage emergency care when symptoms may represent an emergency.
+
+==============================================================================================
+VOICE BEHAVIOUR
+==============================================================================================
+
+You are a voice assistant.
+
+Speak naturally.
+
+Keep responses concise.
+
+Usually respond in one or two sentences. 
+
+Ask one or two questions at a time. 
+
+Do not overwhelm the user with long questionnaire. 
+
+Do not give long medical lectures. 
+
+Do not repeatedly restate information. 
+
+If the user interrupts you, immediately stop and listen. 
+
+Sound calm, warm, professional and  human. 
+
+Do not sound robotic. 
+
+==================================================================================================
+CONVERSATION FLOW
+==================================================================================================
+
+When a user reports a healthcare concern:
+
+1. Acknowledge what they said. 
+2. Ask the most relevant follow-up question. 
+3. Gradually collect useful information. 
+4. Clarify the important details. 
+5. Summerize the information when appropriate. 
+6. Encourage appropriate the professional medical care. 
+
+Useful information may include:
+
+- Main concern 
+- Symptoms
+- Location
+- Duration
+- Severity
+- Whether symptoms are worsening
+- Associated symptoms
+- Medications
+- Allergies
+- Relevant medical history
+
+Do NOT as every question automatically. 
+
+Only ask questions relevant to the users situation.
+
+==========================================================================================
+SAFETY
+==========================================================================================
+
+if the user describes symptoms that could indicate a potentially
+life-threatening emergency, do not attempt to diagnose them.
+
+Instead, clearly recommend seeking emergency medical care
+immediately. 
+
+Potential emergency examples include: 
+
+- Severe difficulty breathing
+- Severe chest pain
+- Loss of consciousness
+- Severe uncontrolled bleeding
+- Signs of a stroke
+- Severe allergic reaction
+- Serious injury
+- Other potentially life-threatening situations
+
+Do not falsely reassure the user. 
+
+Use language such as: 
+
+"This could be serious, and i dont want to guess about the cause.
+Please seek medical emergency care now."
+
+========================================================================================
+CORE PURPOSE
+========================================================================================
+
+MEDI does not replace doctors and medical professionals. 
+
+MEDI helps people communicate with the doctors and medical professionals
+
+The goal is to turn a natural voice conversation into useful, 
+organized healthcare communication. 
+"""
+
+patient = {
+    "main_concern": None,
+    "symptoms": [],
+    "duration": None,
+    "severity": None,
+    "location": None,
+    "associated_symptoms":[],
+    "medications":[],
+    "allergies":[],
+    "medical_history":[],
+    "notes":[],
+}
+
+conversation = []
+
+session_ready = asyncio.Event()
+
+running = True
+
+session_id = None
+
+agent_speaking = False
+
+current_user_transcript = ""
+
+current_agent_transcript = ""
+
+def banner():
+    print()
+    print("-" * 60)
+    print("          MEDI")
+    print("        Voice-First Medical voice assistant")
+    print("-" * 60)
+    print()
+
+
+def status(message):
+    print(f"\n[MEDI] {message}")
+
+class Microphone:
+
+    def __init__(self):
+
+        self.queue = queue.Queue(maxsize=100)
+
+        self.stream = None
+
+        self.active = False
+
+    def callback(
+            self,
+            indata,
+            _frames,
+            _time_info,
+            status
+    ):
+
+        if status:
+            print(f"\n[MIC] {status}")
+
+        if not self.active:
+            return
+
+        audio = indata.copy().tobytes()
+
+        try:
+
+            self.queue.put_nowait(audio)
+
+        except queue.Full:
+
+            pass
+
+    def start(self):
+
+        if self.active:
+            return
+
+        self.active = True
+
+        self.stream = sd.InputStream(
+            samplerate=SAMPLE_RATE,
+            channels=CHANNELS,
+            dtype="int16",
+            blocksize=CHUNK_SAMPLES,
+            callback=self.callback
+        )
+
+        self.stream.start()
+
+    def stop(self):
+
+        self.active = False
+
+        if self.stream:
+
+            self.stream.stop()
+
+            self.stream.close()
+
+            self.stream = None
+
+    def get(self):
+
+        return self.queue.get()
+
+class Speaker:
+
+    def __init__(self):
+
+        self.stream = None
+        self.queue = queue.Queue(maxsize=100)
+
+        self.lock = threading.Lock()
+        self.active = False
+
+        self.worker = None
+        self.generation = 0
+
+    def start(self):
+
+        with self.lock:
+
+            if self.active:
+                return
+
+            self.stream = sd.OutputStream(
+                samplerate=SAMPLE_RATE,
+                channels=CHANNELS,
+                dtype="int16",
+                blocksize=CHUNK_SAMPLES
+            )
+
+            self.stream.start()
+
+            self.active = True
+
+            self.worker = threading.Thread(
+                target=self._playback_worker,
+                daemon=True
+            )
+
+            self.worker.start()
+
+    def _playback_worker(self):
+
+        while self.active:
+
+            try:
+
+                pcm_bytes = self.queue.get(
+                        timeout=0.1
+                    )
+
+            except queue.Empty:
+
+                continue
+
+            if not self.active:
+                    break
+
+            try:
+
+                audio = np.frombuffer(
+                    pcm_bytes,
+                    dtype=np.int16
+                )
+
+                with self.lock:
+
+                    if self.stream and self.active:
+
+                        self.stream.write(audio)
+
+            except Exception as error:
+
+                if self.active:
+
+                    print(
+                        f"\n[AUDIO ERROR] {error}"
+                    )
+    def play(self, pcm_bytes):
+
+        if not pcm_bytes:
+            return
+
+        self.start()
+
+        try:
+
+            self.queue.put_nowait(
+                pcm_bytes
+            )
+
+        except queue.Full:
+
+            print(
+                "\n[AUDIO] Playback queue full"
+            )
+
+    def stop(self):
+
+        with self.lock:
+
+            self.active = False
+            self.generation += 1
+
+            while True:
+
+                try:
+
+                    self.queue.get_nowait()
+
+                except queue.Empty:
+
+                    break
+
+            if self.stream:
+
+                try:
+
+                    self.stream.abort()
+                    self.stream.close()
+
+                except Exception:
+                    pass
+
+                self.stream = None
+
+def update_patient_summary(
+        main_concern=None,
+        symptoms=None,
+        duration=None,
+        severity=None,
+        location=None,
+        associated_symptoms=None,
+        medications=None,
+        allergies=None,
+        medical_history=None,
+        notes=None
+):
+
+    if main_concern:
+        patient["main_concern"] = main_concern
+
+    if symptoms:
+        patient["symptoms"].extend(symptoms)
+
+    if duration:
+        patient["duration"] = duration
+
+    if severity:
+        patient["severity"] = severity
+
+    if location:
+        patient["location"] = location
+
+    if associated_symptoms:
+        patient["associated_symptoms"].extend(
+            associated_symptoms
+        )
+
+    if medications:
+        patient["medications"].extend(
+            medications
+        )
+
+    if allergies:
+        patient["allergies"].extend(
+            allergies
+        )
+
+    if medical_history:
+        patient["medical_history"].extend(
+            medical_history
+        )
+
+    if notes:
+        patient["notes"].extend(notes)
+
+TOOLS = [
+    {
+        "type": "function",
+        "name": "update_patient_memory",
+        "description": (
+            "Update MEDIS structured patient summary using"
+            "information explicitly provided by the user."
+        ),
+        "parameters":{
+            "type": "object",
+            "properties": {
+
+                "main_concern": {
+                    "type": "string"
+                },
+
+                "symptoms": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+
+                "duration": {
+                    "type": "string"
+                },
+
+                "severity": {
+                    "type": "string"
+                },
+
+                "location": {
+                    "type": "string"
+                },
+
+                "associated_symptoms": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+
+                "medications": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "allergies": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "medical_history": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "notes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        }
+    }
+]
+
+def handle_tool(
+        name,
+        arguments
+):
+    if name == "update_patient_memory":
+
+        update_patient_summary(**arguments)
+
+        return {
+            "success": True,
+            "message": "Patient summary updated."
+        }
+
+    return{
+        "success": False,
+        "message": f"Unknown tool: {name}"
+    }
+
+async def send_audio(ws, microphone):
+
+    await session_ready.wait()
+
+    microphone.start()
+
+    status("Listening......")
+
+    while running:
+
+        if not running:
+            break
+
+        audio = await asyncio.to_thread(
+            microphone.get
+        )
+
+        message = {
+            "type": "input.audio",
+            "audio": base64.b64encode(
+                audio
+            ).decode("ascii")
+        }
+
+        await ws.send(
+            json.dumps(message)
+        )
+
+async def receive_events(
+        ws,
+        speaker
+):
+    global session_id
+    global agent_speaking
+    global current_user_transcript
+    global current_agent_transcript
+
+    pending_tools = []
+
+    async for raw in ws:
+
+        event = json.loads(raw)
+
+        event_type = event.get("type")
+
+
+        if event_type == "session.ready":
+
+            session_id = event.get(
+                "session_id"
+            )
+
+            session_ready.set()
+
+            status(
+                "Online. Tell me what you are experiencing.!"
+            )
+
+        elif event_type == "input.speech.started":
+
+            print("\nYou are speaking...")
+
+        elif event_type  == "input.speech.stopped":
+
+            print(f"\n SPEECH HAS STOPPED: {time.perf_counter():.3f}")
+
+            print("\nProcessing...")
+
+        elif event_type == "transcript.user.delta":
+
+            text = event.get(
+                "text",
+                ""
+            )
+
+            current_user_transcript = text
+
+            print(
+                f"\rYou: {text}",
+                end="",
+                flush=True
+            )
+
+        elif event_type == "transcript.user":
+
+            text = event.get(
+                "text",
+                ""
+            ).strip()
+
+            if text:
+
+                conversation.append(
+                    {
+                        "role": "user",
+                        "text": text,
+                        "timestamp": time.time()
+                    }
+                )
+
+                print(
+                    f"\rYou: {text}"
+                    + " " * 25
+                )
+
+        elif event_type == "reply.started":
+
+            print(f"\n REPLY HAS BEEN STARTED: {time.perf_counter():.3f}")
+
+            agent_speaking = True
+
+            current_agent_transcript = ""
+
+            print(
+                "\nMEDI: ",
+                end="",
+                flush=True
+            )
+
+        elif event_type == "reply.audio":
+
+            audio_data = event.get("data")
+
+            if audio_data:
+
+                pcm = base64.b64decode(
+                    audio_data
+                )
+
+                speaker.play(pcm)
+
+
+        elif event_type == "transcript.agent":
+
+            text = event.get(
+                "text",
+                ""
+            ).strip()
+
+            if text:
+
+                current_agent_transcript = text
+
+                print(
+                    f"\rMEDI: {text}"
+                )
+
+                conversation.append(
+                    {
+                        "role": "assistant",
+                        "text": text,
+                        "timestamp": time.time()
+                    }
+                )
+
+        elif event_type == "tool.call":
+
+            call_id = event.get(
+                "call_id"
+            )
+
+            name = event.get(
+                "name"
+            )
+
+            arguments = event.get(
+                "arguments",
+                {}
+            )
+
+            print(
+                f"\n[TOOL] {name}"
+            )
+
+            print(
+                f"[TOOL DATA] {arguments}"
+            )
+
+            result = handle_tool(
+                name,
+                arguments
+            )
+
+            pending_tools.append(
+                {
+                    "call_id": call_id,
+                    "result": result
+                }
+            )
+
+        elif event_type == "reply.done":
+
+            agent_speaking = False
+
+            status_value = event.get("status")
+
+            if status_value == "interrupted":
+
+                print("\n[MEDI] Interrupted")
+
+                pending_tools.clear()
+
+                speaker.stop()
+
+            else:
+
+                for tool in pending_tools:
+
+                    message = {
+                        "type": "tool.result",
+                        "call_id": tool["call_id"],
+                        "result": json.dumps(tool["result"])
+                    }
+
+                    await ws.send(
+                        json.dumps(message)
+                    )
+
+
+                pending_tools.clear()
+
+
+
+        elif event_type == "session.updated":
+
+            print(
+                "\n[MEDI] Session updated."
+            )
+
+        elif event_type == "session.error":
+
+            print(
+                "\n[ASSEMBLYAI ERROR!]"
+            )
+
+            print(
+                event
+            )
+
+        else:
+
+            if event_type:
+
+                print(
+                    f"\n[EVENT] {event_type}"
+                )
+
+async def run_medi():
+
+    microphone = Microphone()
+
+    speaker = Speaker()
+
+    headers = {
+        "Authorization": f"Bearer {API_KEY}"
+    }
+
+    banner()
+
+    print("Connecting to AssemblyAI.....")
+
+    try:
+         async with websockets.connect(
+             WS_URL,
+             additional_headers=headers,
+             open_timeout=30,
+             ping_interval=20,
+             ping_timeout=20,
+             max_size=None
+         ) as ws:
+             await ws.send(
+                 json.dumps(
+                     {
+                         "type": "session.update",
+
+                         "session": {
+
+                             "system_prompt":
+                                 SYSTEM_PROMPT,
+
+                             "greeting":
+                                 (
+                                     "Hi, I am MEDI."
+                                     "Tell me what you are experiencing, "
+                                     "and i will help you organize the"
+                                     "information."
+                                 ),
+
+                             "tools":
+                               TOOLS,
+
+                             "input":{
+                                 "turn_detection":{
+                                     "vad_threshold": 0.6,
+                                     "min_silence": 100,
+                                     "max_silence": 4000,
+                                     "interrupt_response": True
+                                 }
+                             },
+
+                             "output":
+                                 {
+                                     "voice": VOICE
+                                 }
+                         }
+                     }
+                 )
+             )
+
+             await asyncio.gather(
+
+                 send_audio(
+                     ws,
+                     microphone,
+                 ),
+
+                 receive_events(
+                     ws,
+                     speaker
+                 )
+             )
+    finally:
+
+        microphone.stop()
+
+        speaker.stop()
+
+def main():
+
+    global running
+
+    try:
+
+        asyncio.run(
+            run_medi()
+        )
+
+    except KeyboardInterrupt:
+
+        print(
+            "\n\nShutting down MEDI......."
+        )
+
+        running = False
+
+    except Exception as error:
+
+        print()
+        print("-" * 60)
+        print("MEDI ERROR")
+        print("-" * 60)
+        print(error)
+        print("error...LOL..LMAO")
+        print()
+
+if __name__ == "__main__":
+
+    main()
+
+
+
+
