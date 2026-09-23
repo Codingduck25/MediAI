@@ -199,7 +199,7 @@ class Microphone:
 
     def __init__(self):
 
-        self.queue = queue.Queue(maxsize=100)
+        self.queue = queue.Queue(maxsize=20)
 
         self.stream = None
 
@@ -266,124 +266,69 @@ class Speaker:
 
     def __init__(self):
 
-        self.stream = None
-        self.queue = queue.Queue(maxsize=100)
+        self.stream = sd.OutputStream(
+            samplerate=SAMPLE_RATE,
+            channels=CHANNELS,
+            dtype="int16",
+            blocksize=CHUNK_SAMPLES
+        )
 
-        self.lock = threading.Lock()
-        self.active = False
+        self.stream.start()
 
-        self.worker = None
-        self.generation = 0
-
-    def start(self):
-
-        with self.lock:
-
-            if self.active:
-                return
-
-            self.stream = sd.OutputStream(
-                samplerate=SAMPLE_RATE,
-                channels=CHANNELS,
-                dtype="int16",
-                blocksize=CHUNK_SAMPLES
-            )
-
-            self.stream.start()
-
-            self.active = True
-
-            self.worker = threading.Thread(
-                target=self._playback_worker,
-                daemon=True
-            )
-
-            self.worker.start()
-
-    def _playback_worker(self):
-
-        while self.active:
-
-            try:
-
-                pcm_bytes = self.queue.get(
-                        timeout=0.1
-                    )
-
-            except queue.Empty:
-
-                continue
-
-            if not self.active:
-                    break
-
-            try:
-
-                audio = np.frombuffer(
-                    pcm_bytes,
-                    dtype=np.int16
-                )
-
-                with self.lock:
-
-                    if self.stream and self.active:
-
-                        self.stream.write(audio)
-
-            except Exception as error:
-
-                if self.active:
-
-                    print(
-                        f"\n[AUDIO ERROR] {error}"
-                    )
     def play(self, pcm_bytes):
 
         if not pcm_bytes:
             return
 
-        self.start()
+        audio = np.frombuffer(
+            pcm_bytes,
+            dtype=np.int16
+        )
 
         try:
 
-            self.queue.put_nowait(
-                pcm_bytes
-            )
+            self.stream.write(audio)
 
-        except queue.Full:
+        except Exception as error:
 
             print(
-                "\n[AUDIO] Playback queue full"
+                f"\n[AUDIO ERROR] {error}"
             )
+
+
+
+
+    def flush_and_restart(self):
+
+        try:
+
+            self.stream.abort()
+            self.stream.close()
+
+        except Exception:
+
+            pass
+
+        self.stream = sd.OutputStream(
+            samplerate=SAMPLE_RATE,
+            channels=CHANNELS,
+            dtype="int16",
+            blocksize=CHUNK_SAMPLES
+        )
+
+        self.stream.start()
 
     def stop(self):
 
-        with self.lock:
+        try:
 
-            self.active = False
-            self.generation += 1
+            self.stream.abort()
+            self.stream.close()
 
-            while True:
+        except Exception:
 
-                try:
+            pass
 
-                    self.queue.get_nowait()
-
-                except queue.Empty:
-
-                    break
-
-            if self.stream:
-
-                try:
-
-                    self.stream.abort()
-                    self.stream.close()
-
-                except Exception:
-                    pass
-
-                self.stream = None
 
 def update_patient_summary(
         main_concern=None,
@@ -727,7 +672,9 @@ async def receive_events(
 
                 pending_tools.clear()
 
-                speaker.stop()
+                speaker.flush_and_restart()
+
+
 
             else:
 
@@ -818,9 +765,6 @@ async def run_medi():
 
                              "input":{
                                  "turn_detection":{
-                                     "vad_threshold": 0.6,
-                                     "min_silence": 100,
-                                     "max_silence": 4000,
                                      "interrupt_response": True
                                  }
                              },
@@ -883,7 +827,3 @@ def main():
 if __name__ == "__main__":
 
     main()
-
-
-
-
