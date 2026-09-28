@@ -161,8 +161,9 @@ async def broadcast_frontend(message):
         connected_clients.discard(websocket)
 
 
+ENV_FILE = BASE_DIR / ".env"
 
-load_dotenv()
+load_dotenv(ENV_FILE)
 
 API_KEY = os.getenv("ASSEMBLYAI_API_KEY")
 
