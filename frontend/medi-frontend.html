@@ -1,0 +1,2271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>MEDI — Voice Medical Assistant</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        :root {
+            --bg: #07111f;
+            --panel: rgba(15, 28, 46, 0.78);
+            --panel-light: rgba(255, 255, 255, 0.055);
+            --border: rgba(255, 255, 255, 0.09);
+            --text: #f4f8ff;
+            --muted: #8fa2ba;
+            --blue: #5bbcff;
+            --cyan: #69e7ff;
+            --green: #55e6a5;
+            --red: #ff6b7a;
+            --yellow: #ffd166;
+        }
+
+        body {
+            min-height: 100vh;
+            font-family:
+                Inter,
+                ui-sans-serif,
+                system-ui,
+                -apple-system,
+                BlinkMacSystemFont,
+                "Segoe UI",
+                sans-serif;
+
+            background:
+                radial-gradient(
+                    circle at 15% 15%,
+                    rgba(61, 174, 255, 0.12),
+                    transparent 30%
+                ),
+                radial-gradient(
+                    circle at 85% 85%,
+                    rgba(87, 227, 255, 0.08),
+                    transparent 28%
+                ),
+                var(--bg);
+
+            color: var(--text);
+            overflow-x: hidden;
+        }
+
+        body::before {
+            content: "";
+            position: fixed;
+            inset: 0;
+
+            background-image:
+                linear-gradient(
+                    rgba(255,255,255,0.018) 1px,
+                    transparent 1px
+                ),
+                linear-gradient(
+                    90deg,
+                    rgba(255,255,255,0.018) 1px,
+                    transparent 1px
+                );
+
+            background-size: 40px 40px;
+            pointer-events: none;
+        }
+
+        .app {
+            position: relative;
+            z-index: 1;
+
+            width: min(1450px, 94%);
+            min-height: 100vh;
+
+            margin: auto;
+
+            display: grid;
+            grid-template-rows: auto 1fr auto;
+
+            padding: 24px 0;
+        }
+
+        /* =====================================================
+           HEADER
+        ===================================================== */
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+
+            padding: 4px 4px 22px;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 13px;
+        }
+
+        .brand-icon {
+            width: 48px;
+            height: 48px;
+
+            border-radius: 15px;
+
+            display: grid;
+            place-items: center;
+
+            background:
+                linear-gradient(
+                    145deg,
+                    rgba(91,188,255,.25),
+                    rgba(105,231,255,.07)
+                );
+
+            border: 1px solid rgba(105,231,255,.25);
+
+            box-shadow:
+                0 0 30px rgba(91,188,255,.08);
+        }
+
+        .brand-icon span {
+            font-size: 23px;
+            font-weight: 800;
+            color: var(--cyan);
+        }
+
+        .brand h1 {
+            font-size: 21px;
+            letter-spacing: -.4px;
+        }
+
+        .brand p {
+            margin-top: 2px;
+            font-size: 12px;
+            color: var(--muted);
+        }
+
+        .connection {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+
+            padding: 9px 13px;
+
+            border: 1px solid var(--border);
+            border-radius: 999px;
+
+            background: rgba(255,255,255,.035);
+
+            font-size: 12px;
+            color: var(--muted);
+        }
+
+        .connection-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--yellow);
+
+            box-shadow: 0 0 12px currentColor;
+        }
+
+        .connection.online .connection-dot {
+            background: var(--green);
+        }
+
+        .connection.error .connection-dot {
+            background: var(--red);
+        }
+
+        /* =====================================================
+           MAIN
+        ===================================================== */
+
+        main {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 340px;
+            gap: 20px;
+
+            min-height: 0;
+        }
+
+        .panel {
+            background: var(--panel);
+            border: 1px solid var(--border);
+
+            border-radius: 24px;
+
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+
+            box-shadow:
+                0 25px 80px rgba(0,0,0,.25);
+        }
+
+        /* =====================================================
+           CHAT
+        ===================================================== */
+
+        .chat-panel {
+            display: flex;
+            flex-direction: column;
+
+            min-height: 650px;
+            overflow: hidden;
+        }
+
+        .chat-header {
+            padding: 20px 23px;
+
+            border-bottom: 1px solid var(--border);
+
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .chat-title {
+            font-weight: 700;
+            font-size: 14px;
+        }
+
+        .chat-subtitle {
+            margin-top: 3px;
+            color: var(--muted);
+            font-size: 11px;
+        }
+
+        .session-badge {
+            font-size: 11px;
+            padding: 6px 10px;
+
+            border-radius: 999px;
+
+            color: var(--muted);
+            background: rgba(255,255,255,.045);
+            border: 1px solid var(--border);
+        }
+
+        .messages {
+            flex: 1;
+
+            overflow-y: auto;
+
+            padding: 28px;
+
+            display: flex;
+            flex-direction: column;
+            gap: 17px;
+
+            scroll-behavior: smooth;
+        }
+
+        .messages::-webkit-scrollbar {
+            width: 5px;
+        }
+
+        .messages::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,.12);
+            border-radius: 10px;
+        }
+
+        .welcome {
+            margin: auto;
+
+            max-width: 500px;
+
+            text-align: center;
+            padding: 35px 20px;
+        }
+
+        .welcome-orb {
+            width: 76px;
+            height: 76px;
+
+            margin: 0 auto 22px;
+
+            border-radius: 50%;
+
+            display: grid;
+            place-items: center;
+
+            background:
+                radial-gradient(
+                    circle,
+                    rgba(105,231,255,.28),
+                    rgba(91,188,255,.07) 55%,
+                    transparent 70%
+                );
+
+            border: 1px solid rgba(105,231,255,.18);
+
+            box-shadow:
+                0 0 60px rgba(91,188,255,.1);
+        }
+
+        .welcome-orb::after {
+            content: "";
+            width: 25px;
+            height: 25px;
+
+            border-radius: 50%;
+
+            border: 2px solid var(--cyan);
+            opacity: .8;
+        }
+
+        .welcome h2 {
+            font-size: 24px;
+            margin-bottom: 9px;
+            letter-spacing: -.6px;
+        }
+
+        .welcome p {
+            color: var(--muted);
+            line-height: 1.6;
+            font-size: 13px;
+        }
+
+        .message {
+            display: flex;
+            gap: 11px;
+
+            max-width: 78%;
+
+            animation: messageIn .25s ease;
+        }
+
+        @keyframes messageIn {
+            from {
+                opacity: 0;
+                transform: translateY(7px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message.user {
+            margin-left: auto;
+            flex-direction: row-reverse;
+        }
+
+        .avatar {
+            flex: 0 0 34px;
+
+            width: 34px;
+            height: 34px;
+
+            border-radius: 11px;
+
+            display: grid;
+            place-items: center;
+
+            font-size: 11px;
+            font-weight: 800;
+
+            background: rgba(255,255,255,.06);
+            border: 1px solid var(--border);
+        }
+
+        .message.agent .avatar {
+            color: var(--cyan);
+            background: rgba(105,231,255,.07);
+        }
+
+        .message.user .avatar {
+            color: var(--blue);
+            background: rgba(91,188,255,.08);
+        }
+
+        .bubble {
+            padding: 12px 15px;
+
+            border-radius: 17px;
+
+            background: rgba(255,255,255,.045);
+            border: 1px solid var(--border);
+
+            font-size: 13px;
+            line-height: 1.55;
+        }
+
+        .message.user .bubble {
+            background:
+                linear-gradient(
+                    135deg,
+                    rgba(91,188,255,.13),
+                    rgba(91,188,255,.045)
+                );
+
+            border-color: rgba(91,188,255,.16);
+        }
+
+        .message-label {
+            margin-bottom: 5px;
+
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: .8px;
+
+            color: var(--muted);
+        }
+
+        /* =====================================================
+           INPUT / CONTROL
+        ===================================================== */
+
+        .controls {
+            padding: 17px 21px 20px;
+
+            border-top: 1px solid var(--border);
+
+            background: rgba(0,0,0,.08);
+        }
+
+        .status-row {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+
+            margin-bottom: 13px;
+
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .status-light {
+            width: 8px;
+            height: 8px;
+
+            border-radius: 50%;
+
+            background: var(--muted);
+        }
+
+        .status-light.listening {
+            background: var(--green);
+            box-shadow: 0 0 14px rgba(85,230,165,.8);
+            animation: pulse 1.2s infinite;
+        }
+
+        .status-light.thinking {
+            background: var(--yellow);
+            box-shadow: 0 0 14px rgba(255,209,102,.7);
+        }
+
+        .status-light.speaking {
+            background: var(--cyan);
+            box-shadow: 0 0 14px rgba(105,231,255,.7);
+            animation: pulse .8s infinite;
+        }
+
+        @keyframes pulse {
+            0%,100% {
+                transform: scale(1);
+                opacity: .7;
+            }
+
+            50% {
+                transform: scale(1.5);
+                opacity: 1;
+            }
+        }
+
+        .controls-row {
+            display: flex;
+            gap: 10px;
+        }
+
+        button {
+            border: 0;
+            cursor: pointer;
+
+            font: inherit;
+        }
+
+        .mic-button {
+            flex: 1;
+
+            min-height: 50px;
+
+            border-radius: 15px;
+
+            color: white;
+
+            background:
+                linear-gradient(
+                    135deg,
+                    #238ed1,
+                    #47c8e9
+                );
+
+            box-shadow:
+                0 10px 30px rgba(61,174,255,.12);
+
+            font-size: 13px;
+            font-weight: 700;
+
+            transition:
+                transform .18s ease,
+                opacity .18s ease,
+                box-shadow .18s ease;
+        }
+
+        .mic-button:hover {
+            transform: translateY(-1px);
+            box-shadow:
+                0 13px 35px rgba(61,174,255,.2);
+        }
+
+        .mic-button.active {
+            background:
+                linear-gradient(
+                    135deg,
+                    #d94b67,
+                    #ff7080
+                );
+        }
+
+        .mic-button:disabled {
+            opacity: .45;
+            cursor: not-allowed;
+        }
+
+        .secondary-button {
+            width: 50px;
+            min-height: 50px;
+
+            border-radius: 15px;
+
+            color: var(--muted);
+
+            background: rgba(255,255,255,.045);
+            border: 1px solid var(--border);
+
+            font-size: 18px;
+        }
+
+        .disclaimer {
+            margin-top: 11px;
+
+            text-align: center;
+
+            font-size: 10px;
+            color: #71849d;
+        }
+
+        /* =====================================================
+           SIDE PANEL
+        ===================================================== */
+
+        .side {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .side-card {
+            padding: 19px;
+
+            background: var(--panel);
+            border: 1px solid var(--border);
+
+            border-radius: 20px;
+
+            backdrop-filter: blur(18px);
+        }
+
+        .card-heading {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+
+            margin-bottom: 16px;
+        }
+
+        .card-heading h3 {
+            font-size: 13px;
+        }
+
+        .card-heading span {
+            color: var(--muted);
+            font-size: 10px;
+        }
+
+        /* =====================================================
+           WAVEFORM
+        ===================================================== */
+
+        .wave {
+            height: 100px;
+
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+
+            padding: 10px;
+
+            border-radius: 15px;
+
+            background: rgba(255,255,255,.025);
+            border: 1px solid rgba(255,255,255,.045);
+        }
+
+        .bar {
+            width: 3px;
+            height: 12px;
+
+            border-radius: 99px;
+
+            background: var(--cyan);
+
+            opacity: .35;
+
+            transition:
+                height .12s ease,
+                opacity .12s ease;
+        }
+
+        .wave.active .bar {
+            animation: wave 1s ease-in-out infinite;
+            opacity: .8;
+        }
+
+        .bar:nth-child(2n) {
+            animation-delay: .1s;
+        }
+
+        .bar:nth-child(3n) {
+            animation-delay: .2s;
+        }
+
+        .bar:nth-child(4n) {
+            animation-delay: .3s;
+        }
+
+        @keyframes wave {
+            0%,100% {
+                height: 10px;
+            }
+
+            50% {
+                height: 48px;
+            }
+        }
+
+        /* =====================================================
+           PATIENT SUMMARY
+        ===================================================== */
+
+        .summary {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .summary-item {
+            padding: 11px 12px;
+
+            border-radius: 12px;
+
+            background: rgba(255,255,255,.035);
+            border: 1px solid rgba(255,255,255,.045);
+        }
+
+        .summary-label {
+            font-size: 9px;
+
+            text-transform: uppercase;
+            letter-spacing: .8px;
+
+            color: #71849d;
+
+            margin-bottom: 4px;
+        }
+
+        .summary-value {
+            font-size: 12px;
+            color: #dce7f5;
+
+            word-break: break-word;
+        }
+
+        .empty {
+            color: #71849d;
+            font-size: 11px;
+        }
+
+        .tag-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+        }
+
+        .tag {
+            padding: 4px 7px;
+
+            border-radius: 7px;
+
+            font-size: 10px;
+
+            background: rgba(105,231,255,.07);
+            color: #bdefff;
+
+            border: 1px solid rgba(105,231,255,.1);
+        }
+
+        /* =====================================================
+           FOOTER
+        ===================================================== */
+
+        footer {
+            padding: 18px 4px 0;
+
+            display: flex;
+            justify-content: space-between;
+
+            color: #60748e;
+            font-size: 10px;
+        }
+
+        footer strong {
+            color: #8498b2;
+        }
+
+        /* =====================================================
+           TOAST
+        ===================================================== */
+
+        .toast {
+            position: fixed;
+
+            right: 22px;
+            bottom: 22px;
+
+            z-index: 100;
+
+            max-width: 340px;
+
+            padding: 13px 16px;
+
+            border-radius: 13px;
+
+            background: rgba(12,22,37,.94);
+            border: 1px solid var(--border);
+
+            box-shadow: 0 15px 45px rgba(0,0,0,.3);
+
+            color: #dce7f5;
+            font-size: 12px;
+
+            transform: translateY(20px);
+            opacity: 0;
+
+            pointer-events: none;
+
+            transition:
+                opacity .2s ease,
+                transform .2s ease;
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .toast.error {
+            border-color: rgba(255,107,122,.3);
+        }
+
+        /* =====================================================
+           RESPONSIVE
+        ===================================================== */
+
+        @media (max-width: 900px) {
+
+            main {
+                grid-template-columns: 1fr;
+            }
+
+            .side {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+            }
+
+            .chat-panel {
+                min-height: 600px;
+            }
+        }
+
+        @media (max-width: 620px) {
+
+            .app {
+                width: 96%;
+                padding-top: 12px;
+            }
+
+            header {
+                padding-bottom: 14px;
+            }
+
+            .connection {
+                padding: 7px 9px;
+            }
+
+            .connection span:last-child {
+                display: none;
+            }
+
+            main {
+                gap: 12px;
+            }
+
+            .chat-panel {
+                min-height: 590px;
+                border-radius: 19px;
+            }
+
+            .messages {
+                padding: 18px 14px;
+            }
+
+            .message {
+                max-width: 91%;
+            }
+
+            .side {
+                grid-template-columns: 1fr;
+            }
+
+            footer {
+                padding-bottom: 10px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="app">
+
+    <!-- =====================================================
+         HEADER
+    ====================================================== -->
+
+    <header>
+
+        <div class="brand">
+
+            <div class="brand-icon">
+                <span>M</span>
+            </div>
+
+            <div>
+                <h1>MEDI</h1>
+                <p>Voice-first medical communication assistant</p>
+            </div>
+
+        </div>
+
+        <div
+            id="connection"
+            class="connection"
+        >
+            <span
+                id="connectionDot"
+                class="connection-dot"
+            ></span>
+
+            <span id="connectionText">
+                Connecting...
+            </span>
+        </div>
+
+    </header>
+
+
+    <!-- =====================================================
+         MAIN
+    ====================================================== -->
+
+    <main>
+
+        <!-- ================= CHAT ================= -->
+
+        <section class="panel chat-panel">
+
+            <div class="chat-header">
+
+                <div>
+                    <div class="chat-title">
+                        MEDI Conversation
+                    </div>
+
+                    <div class="chat-subtitle">
+                        Speak naturally — MEDI will organize the information.
+                    </div>
+                </div>
+
+                <div
+                    id="sessionBadge"
+                    class="session-badge"
+                >
+                    Initializing
+                </div>
+
+            </div>
+
+
+            <div
+                id="messages"
+                class="messages"
+            >
+
+                <div
+                    id="welcome"
+                    class="welcome"
+                >
+
+                    <div class="welcome-orb"></div>
+
+                    <h2>
+                        How are you feeling?
+                    </h2>
+
+                    <p>
+                        Start a voice conversation with MEDI.
+                        Describe what's bothering you and MEDI
+                        will help organize the information for a
+                        healthcare professional.
+                    </p>
+
+                </div>
+
+            </div>
+
+
+            <!-- CONTROLS -->
+
+            <div class="controls">
+
+                <div class="status-row">
+
+                    <span
+                        id="statusLight"
+                        class="status-light"
+                    ></span>
+
+                    <span id="statusText">
+                        Connecting to MEDI...
+                    </span>
+
+                </div>
+
+
+                <div class="controls-row">
+
+                    <button
+                        id="micButton"
+                        class="mic-button"
+                        disabled
+                    >
+                        🎙 Start Conversation
+                    </button>
+
+                    <button
+                        id="clearButton"
+                        class="secondary-button"
+                        title="Clear conversation"
+                    >
+                        ↺
+                    </button>
+
+                </div>
+
+
+                <div class="disclaimer">
+                    MEDI does not diagnose conditions or replace a
+                    qualified healthcare professional.
+                </div>
+
+            </div>
+
+        </section>
+
+
+        <!-- ================= SIDE ================= -->
+
+        <aside class="side">
+
+            <!-- AUDIO -->
+
+            <section class="side-card">
+
+                <div class="card-heading">
+
+                    <h3>Voice Activity</h3>
+
+                    <span id="voiceState">
+                        Idle
+                    </span>
+
+                </div>
+
+                <div
+                    id="wave"
+                    class="wave"
+                >
+                    <span class="bar"></span>
+                    <span class="bar"></span>
+                    <span class="bar"></span>
+                    <span class="bar"></span>
+                    <span class="bar"></span>
+                    <span class="bar"></span>
+                    <span class="bar"></span>
+                    <span class="bar"></span>
+                    <span class="bar"></span>
+                    <span class="bar"></span>
+                    <span class="bar"></span>
+                    <span class="bar"></span>
+                    <span class="bar"></span>
+                    <span class="bar"></span>
+                    <span class="bar"></span>
+                    <span class="bar"></span>
+                    <span class="bar"></span>
+                    <span class="bar"></span>
+                    <span class="bar"></span>
+                    <span class="bar"></span>
+                </div>
+
+            </section>
+
+
+            <!-- PATIENT SUMMARY -->
+
+            <section class="side-card">
+
+                <div class="card-heading">
+
+                    <h3>Patient Summary</h3>
+
+                    <span>
+                        Live
+                    </span>
+
+                </div>
+
+
+                <div
+                    id="summary"
+                    class="summary"
+                >
+
+                    <div class="summary-item">
+
+                        <div class="summary-label">
+                            Main concern
+                        </div>
+
+                        <div
+                            id="mainConcern"
+                            class="summary-value empty"
+                        >
+                            Nothing recorded yet
+                        </div>
+
+                    </div>
+
+
+                    <div class="summary-item">
+
+                        <div class="summary-label">
+                            Symptoms
+                        </div>
+
+                        <div
+                            id="symptoms"
+                            class="tag-list"
+                        >
+                            <span class="empty">
+                                None recorded
+                            </span>
+                        </div>
+
+                    </div>
+
+
+                    <div class="summary-item">
+
+                        <div class="summary-label">
+                            Duration
+                        </div>
+
+                        <div
+                            id="duration"
+                            class="summary-value empty"
+                        >
+                            Not provided
+                        </div>
+
+                    </div>
+
+
+                    <div class="summary-item">
+
+                        <div class="summary-label">
+                            Severity
+                        </div>
+
+                        <div
+                            id="severity"
+                            class="summary-value empty"
+                        >
+                            Not provided
+                        </div>
+
+                    </div>
+
+
+                    <div class="summary-item">
+
+                        <div class="summary-label">
+                            Location
+                        </div>
+
+                        <div
+                            id="location"
+                            class="summary-value empty"
+                        >
+                            Not provided
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </section>
+
+
+            <!-- SYSTEM -->
+
+            <section class="side-card">
+
+                <div class="card-heading">
+
+                    <h3>System</h3>
+
+                    <span>
+                        MEDI
+                    </span>
+
+                </div>
+
+                <div class="summary">
+
+                    <div class="summary-item">
+
+                        <div class="summary-label">
+                            Backend
+                        </div>
+
+                        <div
+                            id="backendStatus"
+                            class="summary-value"
+                        >
+                            Connecting
+                        </div>
+
+                    </div>
+
+                    <div class="summary-item">
+
+                        <div class="summary-label">
+                            WebSocket
+                        </div>
+
+                        <div
+                            id="wsStatus"
+                            class="summary-value"
+                        >
+                            Connecting
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </section>
+
+        </aside>
+
+    </main>
+
+
+    <footer>
+
+        <span>
+            <strong>MEDI</strong> · Voice Medical Assistant
+        </span>
+
+        <span>
+            Hackathon Prototype
+        </span>
+
+    </footer>
+
+</div>
+
+
+<div
+    id="toast"
+    class="toast"
+></div>
+
+
+<script>
+
+/* ============================================================
+   MEDI FRONTEND
+   ============================================================
+
+   IMPORTANT:
+
+   Your Python backend is:
+
+       http://127.0.0.1:8000
+
+   Your WebSocket endpoint is:
+
+       ws://127.0.0.1:8000/ws
+
+   NOT port 8765.
+   ============================================================ */
+
+
+/* ============================================================
+   CONFIG
+============================================================ */
+
+const BACKEND_HTTP = window.location.origin;
+
+const BACKEND_WS = window.location.protocol == "https:" ? `wss://${window.location.host}/ws`
+                                                        : `ws://${window.location.host}/ws`;
+
+/* ============================================================
+   STATE
+============================================================ */
+
+let socket = null;
+
+let connected = false;
+
+let conversationStarted = false;
+
+let reconnectTimer = null;
+
+let reconnectAttempts = 0;
+
+let patientData = {};
+
+
+/* ============================================================
+   DOM
+============================================================ */
+
+const connection = document.getElementById("connection");
+const connectionText = document.getElementById("connectionText");
+
+const sessionBadge = document.getElementById("sessionBadge");
+
+const messages = document.getElementById("messages");
+const welcome = document.getElementById("welcome");
+
+const micButton = document.getElementById("micButton");
+const clearButton = document.getElementById("clearButton");
+
+const statusText = document.getElementById("statusText");
+const statusLight = document.getElementById("statusLight");
+
+const wave = document.getElementById("wave");
+const voiceState = document.getElementById("voiceState");
+
+const backendStatus = document.getElementById("backendStatus");
+const wsStatus = document.getElementById("wsStatus");
+
+const toast = document.getElementById("toast");
+
+
+/* ============================================================
+   CONNECT
+============================================================ */
+
+function connect() {
+
+    if (
+        socket &&
+        (
+            socket.readyState === WebSocket.OPEN ||
+            socket.readyState === WebSocket.CONNECTING
+        )
+    ) {
+        return;
+    }
+
+    setConnection("connecting");
+
+    console.log(
+        "[MEDI] Connecting to:",
+        BACKEND_WS
+    );
+
+    socket = new WebSocket(BACKEND_WS);
+
+
+    socket.onopen = () => {
+
+        connected = true;
+
+        reconnectAttempts = 0;
+
+        setConnection("online");
+
+        backendStatus.textContent = "Online";
+
+        wsStatus.textContent = "Connected";
+
+        sessionBadge.textContent = "Connected";
+
+        micButton.disabled = false;
+
+        showToast(
+            "Connected to MEDI"
+        );
+
+        send({
+            type: "get_state"
+        });
+
+    };
+
+
+    socket.onmessage = (event) => {
+
+        try {
+
+            const message = JSON.parse(
+                event.data
+            );
+
+            console.log(
+                "[MEDI EVENT]",
+                message
+            );
+
+            handleMessage(message);
+
+        } catch (error) {
+
+            console.error(
+                "Invalid MEDI message:",
+                error
+            );
+
+        }
+
+    };
+
+
+    socket.onerror = (error) => {
+
+        console.error(
+            "[MEDI WS ERROR]",
+            error
+        );
+
+        setConnection("error");
+
+        backendStatus.textContent = "Connection error";
+
+        wsStatus.textContent = "Error";
+
+    };
+
+
+    socket.onclose = () => {
+
+        connected = false;
+
+        setConnection("error");
+
+        backendStatus.textContent = "Offline";
+
+        wsStatus.textContent = "Disconnected";
+
+        sessionBadge.textContent = "Disconnected";
+
+        micButton.disabled = true;
+
+        setStatus(
+            "error",
+            "MEDI backend disconnected"
+        );
+
+        scheduleReconnect();
+
+    };
+
+}
+
+
+/* ============================================================
+   RECONNECT
+============================================================ */
+
+function scheduleReconnect() {
+
+    if (reconnectTimer) {
+        return;
+    }
+
+    reconnectAttempts++;
+
+    const delay = Math.min(
+        5000,
+        1000 * reconnectAttempts
+    );
+
+    reconnectTimer = setTimeout(() => {
+
+        reconnectTimer = null;
+
+        connect();
+
+    }, delay);
+
+}
+
+
+/* ============================================================
+   SEND
+============================================================ */
+
+function send(data) {
+
+    if (
+        !socket ||
+        socket.readyState !== WebSocket.OPEN
+    ) {
+
+        console.warn(
+            "[MEDI] WebSocket is not connected."
+        );
+
+        return false;
+    }
+
+    socket.send(
+        JSON.stringify(data)
+    );
+
+    return true;
+}
+
+
+/* ============================================================
+   HANDLE BACKEND EVENTS
+============================================================ */
+
+function handleMessage(message) {
+
+    const type = message.type;
+
+
+    /* ---------------------------------------------
+       Initial state
+    --------------------------------------------- */
+
+    if (type === "state") {
+
+        const data = message.data || {};
+
+        if (data.status) {
+            setStatusFromBackend(
+                data.status
+            );
+        }
+
+        if (data.patient) {
+
+            patientData = data.patient;
+
+            updatePatientSummary(
+                patientData
+            );
+
+        }
+
+        return;
+    }
+
+
+    /* ---------------------------------------------
+       Status
+    --------------------------------------------- */
+
+    if (type === "status") {
+
+        const status = message.status || "ready";
+
+        setStatusFromBackend(
+            status
+        );
+
+        return;
+    }
+
+
+    /* ---------------------------------------------
+       User transcript
+    --------------------------------------------- */
+
+    if (type === "transcript") {
+
+        const role = message.role || "user";
+
+        const text = message.text || "";
+
+        if (!text.trim()) {
+            return;
+        }
+
+        addMessage(
+            role,
+            text
+        );
+
+        return;
+    }
+
+
+    /* ---------------------------------------------
+       Patient memory
+    --------------------------------------------- */
+
+    if (type === "patient_update") {
+
+        patientData =
+            message.data || {};
+
+        updatePatientSummary(
+            patientData
+        );
+
+        return;
+    }
+
+
+    /* ---------------------------------------------
+       Server test
+    --------------------------------------------- */
+
+    if (type === "test") {
+
+        showToast(
+            message.message ||
+            "MEDI server is working."
+        );
+
+        return;
+    }
+
+}
+
+
+/* ============================================================
+   CONNECTION UI
+============================================================ */
+
+function setConnection(state) {
+
+    connection.classList.remove(
+        "online",
+        "error"
+    );
+
+
+    if (state === "online") {
+
+        connection.classList.add(
+            "online"
+        );
+
+        connectionText.textContent =
+            "MEDI Online";
+
+    }
+
+    else if (state === "error") {
+
+        connection.classList.add(
+            "error"
+        );
+
+        connectionText.textContent =
+            "Backend Offline";
+
+    }
+
+    else {
+
+        connectionText.textContent =
+            "Connecting...";
+
+    }
+
+}
+
+
+/* ============================================================
+   STATUS
+============================================================ */
+
+function setStatus(type, text) {
+
+    statusLight.className =
+        "status-light";
+
+    if (type) {
+
+        statusLight.classList.add(
+            type
+        );
+
+    }
+
+    statusText.textContent =
+        text;
+
+
+    if (type === "listening") {
+
+        wave.classList.add(
+            "active"
+        );
+
+        voiceState.textContent =
+            "Listening";
+
+    }
+
+    else if (type === "speaking") {
+
+        wave.classList.add(
+            "active"
+        );
+
+        voiceState.textContent =
+            "Speaking";
+
+    }
+
+    else if (type === "thinking") {
+
+        wave.classList.remove(
+            "active"
+        );
+
+        voiceState.textContent =
+            "Thinking";
+
+    }
+
+    else {
+
+        wave.classList.remove(
+            "active"
+        );
+
+        voiceState.textContent =
+            "Idle";
+
+    }
+
+}
+
+
+/* ============================================================
+   BACKEND STATUS → UI
+============================================================ */
+
+function setStatusFromBackend(status) {
+
+    status =
+        String(status).toLowerCase();
+
+
+    if (status === "listening") {
+
+        conversationStarted = true;
+
+        micButton.classList.add(
+            "active"
+        );
+
+        micButton.textContent =
+            "■ Stop Conversation";
+
+        setStatus(
+            "listening",
+            "Listening..."
+        );
+
+        sessionBadge.textContent =
+            "Listening";
+
+    }
+
+    else if (
+        status === "thinking" ||
+        status === "processing"
+    ) {
+
+        setStatus(
+            "thinking",
+            "Thinking..."
+        );
+
+        sessionBadge.textContent =
+            "Thinking";
+
+    }
+
+    else if (
+        status === "speaking"
+    ) {
+
+        setStatus(
+            "speaking",
+            "MEDI is speaking..."
+        );
+
+        sessionBadge.textContent =
+            "Speaking";
+
+    }
+
+    else {
+
+        setStatus(
+            "",
+            "Ready"
+        );
+
+        sessionBadge.textContent =
+            "Ready";
+
+    }
+
+}
+
+
+/* ============================================================
+   MESSAGES
+============================================================ */
+
+function addMessage(role, text) {
+
+    if (!text || !text.trim()) {
+        return;
+    }
+
+    if (welcome) {
+        welcome.remove();
+    }
+
+
+    const wrapper =
+        document.createElement("div");
+
+    wrapper.className =
+        `message ${role === "user" ? "user" : "agent"}`;
+
+
+    const avatar =
+        document.createElement("div");
+
+    avatar.className =
+        "avatar";
+
+    avatar.textContent =
+        role === "user"
+            ? "YOU"
+            : "M";
+
+
+    const content =
+        document.createElement("div");
+
+
+    const label =
+        document.createElement("div");
+
+    label.className =
+        "message-label";
+
+    label.textContent =
+        role === "user"
+            ? "You"
+            : "MEDI";
+
+
+    const bubble =
+        document.createElement("div");
+
+    bubble.className =
+        "bubble";
+
+    bubble.textContent =
+        text;
+
+
+    content.appendChild(
+        label
+    );
+
+    content.appendChild(
+        bubble
+    );
+
+
+    wrapper.appendChild(
+        avatar
+    );
+
+    wrapper.appendChild(
+        content
+    );
+
+
+    messages.appendChild(
+        wrapper
+    );
+
+
+    messages.scrollTop =
+        messages.scrollHeight;
+
+}
+
+
+/* ============================================================
+   PATIENT SUMMARY
+============================================================ */
+
+function updatePatientSummary(patient) {
+
+    if (!patient) {
+        return;
+    }
+
+
+    const mainConcern =
+        document.getElementById(
+            "mainConcern"
+        );
+
+    const symptoms =
+        document.getElementById(
+            "symptoms"
+        );
+
+    const duration =
+        document.getElementById(
+            "duration"
+        );
+
+    const severity =
+        document.getElementById(
+            "severity"
+        );
+
+    const location =
+        document.getElementById(
+            "location"
+        );
+
+
+    /* Main concern */
+
+    if (patient.main_concern) {
+
+        mainConcern.textContent =
+            patient.main_concern;
+
+        mainConcern.classList.remove(
+            "empty"
+        );
+
+    }
+
+
+    /* Symptoms */
+
+    symptoms.innerHTML = "";
+
+    if (
+        Array.isArray(
+            patient.symptoms
+        ) &&
+        patient.symptoms.length
+    ) {
+
+        patient.symptoms.forEach(
+            symptom => {
+
+                const tag =
+                    document.createElement(
+                        "span"
+                    );
+
+                tag.className =
+                    "tag";
+
+                tag.textContent =
+                    symptom;
+
+                symptoms.appendChild(
+                    tag
+                );
+
+            }
+        );
+
+    }
+
+    else {
+
+        const empty =
+            document.createElement(
+                "span"
+            );
+
+        empty.className =
+            "empty";
+
+        empty.textContent =
+            "None recorded";
+
+        symptoms.appendChild(
+            empty
+        );
+
+    }
+
+
+    /* Duration */
+
+    if (patient.duration) {
+
+        duration.textContent =
+            patient.duration;
+
+        duration.classList.remove(
+            "empty"
+        );
+
+    }
+
+
+    /* Severity */
+
+    if (patient.severity) {
+
+        severity.textContent =
+            patient.severity;
+
+        severity.classList.remove(
+            "empty"
+        );
+
+    }
+
+
+    /* Location */
+
+    if (patient.location) {
+
+        location.textContent =
+            patient.location;
+
+        location.classList.remove(
+            "empty"
+        );
+
+    }
+
+}
+
+
+/* ============================================================
+   START / STOP
+============================================================ */
+
+micButton.addEventListener(
+    "click",
+    () => {
+
+        if (!connected) {
+
+            showToast(
+                "MEDI is not connected.",
+                true
+            );
+
+            return;
+        }
+
+
+        if (!conversationStarted) {
+
+            send({
+                type: "start"
+            });
+
+            conversationStarted = true;
+
+            micButton.classList.add(
+                "active"
+            );
+
+            micButton.textContent =
+                "■ Stop Conversation";
+
+            setStatus(
+                "listening",
+                "Listening..."
+            );
+
+        }
+
+        else {
+
+            send({
+                type: "stop"
+            });
+
+            conversationStarted = false;
+
+            micButton.classList.remove(
+                "active"
+            );
+
+            micButton.textContent =
+                "🎙 Start Conversation";
+
+            setStatus(
+                "",
+                "Ready"
+            );
+
+        }
+
+    }
+);
+
+
+/* ============================================================
+   CLEAR
+============================================================ */
+
+clearButton.addEventListener(
+    "click",
+    () => {
+
+        messages.innerHTML = "";
+
+        const newWelcome =
+            document.createElement(
+                "div"
+            );
+
+        newWelcome.className =
+            "welcome";
+
+        newWelcome.id =
+            "welcome";
+
+        newWelcome.innerHTML = `
+            <div class="welcome-orb"></div>
+
+            <h2>How are you feeling?</h2>
+
+            <p>
+                Start a voice conversation with MEDI.
+                Describe what's bothering you and MEDI
+                will help organize the information for a
+                healthcare professional.
+            </p>
+        `;
+
+        messages.appendChild(
+            newWelcome
+        );
+
+    }
+);
+
+
+/* ============================================================
+   TOAST
+============================================================ */
+
+let toastTimer = null;
+
+function showToast(
+    text,
+    isError = false
+) {
+
+    toast.textContent =
+        text;
+
+    toast.classList.toggle(
+        "error",
+        isError
+    );
+
+    toast.classList.add(
+        "show"
+    );
+
+
+    clearTimeout(
+        toastTimer
+    );
+
+
+    toastTimer =
+        setTimeout(
+            () => {
+
+                toast.classList.remove(
+                    "show"
+                );
+
+            },
+            3000
+        );
+
+}
+
+
+/* ============================================================
+   HEALTH CHECK
+============================================================ */
+
+async function checkBackend() {
+
+    try {
+
+        const response =
+            await fetch(
+                `${BACKEND_HTTP}/api/health`
+            );
+
+
+        if (!response.ok) {
+            throw new Error(
+                "Backend health check failed"
+            );
+        }
+
+
+        const data =
+            await response.json();
+
+
+        console.log(
+            "[MEDI HEALTH]",
+            data
+        );
+
+
+        backendStatus.textContent =
+            data.status === "online"
+                ? "Online"
+                : "Offline";
+
+
+    } catch (error) {
+
+        console.warn(
+            "[MEDI] Health check failed:",
+            error
+        );
+
+        backendStatus.textContent =
+            "Unavailable";
+
+    }
+
+}
+
+
+/* ============================================================
+   INITIALIZE
+============================================================ */
+
+window.addEventListener(
+    "load",
+    () => {
+
+        checkBackend();
+
+        connect();
+
+    }
+);
+
+
+/* ============================================================
+   DEBUGGING
+============================================================ */
+
+window.MEDI = {
+
+    socket,
+
+    reconnect: connect,
+
+    test: () => {
+
+        send({
+            type: "test"
+        });
+
+    },
+
+    state: () => {
+
+        send({
+            type: "get_state"
+        });
+
+    }
+
+};
+
+</script>
+
+</body>
+</html>
